@@ -1,5 +1,5 @@
 import { mount, unmount } from 'svelte';
-import { adapters, getAdapterForHostname, type SiteAdapter } from '@/lib/adapters';
+import { adapters, getAdapterForHostname, type SiteAdapter } from '@/lib/content/adapters';
 import Widget from '@/components/Widget.svelte';
 
 export default defineContentScript({

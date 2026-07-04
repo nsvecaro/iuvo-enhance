@@ -1,7 +1,9 @@
 <script lang="ts">
   import Panel from './Panel.svelte';
-  import type { SiteAdapter } from '@/lib/adapters';
+  import ApiKeySetup from './ApiKeySetup.svelte';
+  import type { SiteAdapter } from '@/lib/content/adapters';
   import type { EnhanceParams } from '@/lib/enhance';
+  import { anthropicApiKey } from '@/lib/storage';
 
   interface Props {
     adapter: SiteAdapter;
@@ -12,19 +14,45 @@
 
   let panelOpen = $state(false);
   let draftText = $state('');
+  let hasApiKey = $state(false);
 
-  function toggle() {
-    if (!panelOpen) draftText = adapter.getValue(input);
+  async function toggle() {
+    if (!panelOpen) {
+      draftText = adapter.getValue(input);
+      hasApiKey = !!(await anthropicApiKey.getValue());
+    }
     panelOpen = !panelOpen;
+  }
+
+  function handleKeySaved() {
+    hasApiKey = true;
   }
 
   function close() {
     panelOpen = false;
   }
 
-  function handleEnhance(params: EnhanceParams) {
-    // Stub: no Provider Abstraction Layer yet (build order step 3).
-    console.log(`[iuvo:${adapter.id}] enhance requested`, { draftText, params });
+  async function handleEnhance(params: EnhanceParams): Promise<string> {
+    // Re-read right before sending — the user may have kept typing while the
+    // panel was open, and T-02 requires sending exactly what's shown, not a
+    // stale snapshot from when the panel opened.
+    draftText = adapter.getValue(input);
+
+    const response = await browser.runtime.sendMessage({
+      type: 'iuvo:enhance',
+      draftText,
+      params,
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error ?? 'Enhance failed for an unknown reason.');
+    }
+    return response.result;
+  }
+
+  function handleAccept(rewrittenText: string) {
+    adapter.setValue(input, rewrittenText);
+    panelOpen = false;
   }
 
   // Step 1's read/write proof, kept reachable for re-verifying on a site
@@ -41,7 +69,7 @@
       alert(
         stuck
           ? `setValue worked on ${adapter.id}. Try typing more in the box now — if it behaves normally, the mechanism is solid.`
-          : `setValue did NOT stick on ${adapter.id}. Check the devtools console and lib/adapters/${adapter.id}.ts.`
+          : `setValue did NOT stick on ${adapter.id}. Check the devtools console and lib/content/adapters/${adapter.id}.ts.`
       );
     }, 50);
   }
@@ -50,7 +78,11 @@
 <button class="bubble" onclick={toggle} aria-label="Open Iuvo">✨</button>
 
 {#if panelOpen}
-  <Panel {draftText} onClose={close} onEnhance={handleEnhance} />
+  {#if !hasApiKey}
+    <ApiKeySetup onSaved={handleKeySaved} onClose={close} />
+  {:else}
+    <Panel {draftText} onClose={close} onEnhance={handleEnhance} onAccept={handleAccept} />
+  {/if}
   <button class="dev-test-btn" onclick={runWriteTest}>dev: test write</button>
 {/if}
 

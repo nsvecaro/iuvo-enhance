@@ -14,21 +14,36 @@ to learn prompt engineering. Full spec: `Iuvo_Architecture_v2_0.docx`.
 
 ## Current state (keep this section honest as we go)
 
-- WXT + TypeScript + Svelte (via `@wxt-dev/module-svelte`). No providers yet.
-- `entrypoints/content.ts` + `lib/adapters/{chatgpt,claude}.ts`: a small adapter pattern
+- WXT + TypeScript + Svelte (via `@wxt-dev/module-svelte`).
+- `lib/` is split by execution context: `lib/content/` is content-script-only code,
+  `lib/background/` is background-worker-only code, and `lib/enhance.ts`/`lib/storage.ts`
+  at the root are shared by both. New files go in whichever of those three matches where
+  the code actually runs — see README's "Architecture" section for the full breakdown.
+- `entrypoints/content.ts` + `lib/content/adapters/{chatgpt,claude}.ts`: a small adapter pattern
   (`findInput`/`getValue`/`setValue` per site, see doc 6.3). Matches `chatgpt.com` and
   `claude.ai`, polls for the input, mounts a Svelte UI (`components/Widget.svelte`) inside a
   Shadow DOM via `createShadowRootUi`.
-- `Widget.svelte` renders the bubble; clicking it toggles `Panel.svelte` open/closed. The
-  panel shows the current draft (read via the adapter) and the 5 hardcoded FR4 params
-  (depth, simplification, tone, target length, output format — see `lib/enhance.ts`). Its
-  "Enhance" button is a stub — logs `{draftText, params}` to console, no provider exists yet
-  (that's step 3, do not build ahead of it).
+- `Widget.svelte` renders the bubble. On click, it checks `lib/storage.ts`'s
+  `anthropicApiKey` — if unset, it shows `ApiKeySetup.svelte` (inline first-run screen, not
+  a separate options page) instead of the real panel; once a key is saved it toggles
+  `Panel.svelte` open/closed from then on. The panel shows the current draft (read via the
+  adapter) and the 5 hardcoded FR4 params (depth, simplification, tone, target length,
+  output format — see `lib/enhance.ts`).
+- **Enhance is now wired end-to-end with one real provider.** Panel → `browser.runtime
+  .sendMessage({type: 'iuvo:enhance', ...})` → `entrypoints/background.ts` (the only
+  component that calls `fetch`, per the hard rule below) → `lib/background/providers/anthropic.ts`
+  (direct call to the Anthropic Messages API) → result flows back and the panel shows a
+  **preview** (original vs. rewritten) before anything touches the real input (T-02). Only
+  on "Use this" does `adapter.setValue` run. The API key is stored via `lib/storage.ts`
+  (`local:` only, never `sync` — T-06); the toolbar popup (`entrypoints/popup/`) has the
+  same key field for editing it later, but first-run setup happens inline via the bubble.
+- Only one provider exists (`byok-anthropic`, see `lib/background/providers/index.ts`'s `defaultProvider`)
+  — self-hosted Ollama and hosted backend are steps 6-7, not built yet.
 - The step-1 read/write proof is still reachable via a small "dev: test write" button that
   appears next to the open panel, so it can be re-verified any time without digging through
   git history. It writes a marker string back via `execCommand('insertText', ...)` (not a
   plain `dispatchEvent` — see below) and alerts whether it stuck.
-- **The Claude.ai selector in `lib/adapters/claude.ts` is unverified against the live site**
+- **The Claude.ai selector in `lib/content/adapters/claude.ts` is unverified against the live site**
   — it has fallbacks but needs a human to confirm/correct it in devtools.
 - The architecture doc describes the TARGET state, not what is built. Do not assume
   anything in the doc exists in code yet.
@@ -39,7 +54,7 @@ Reliably writing text back into `contenteditable` inputs whose React/Vue/ProseMi
 internal state does NOT update from a plain `dispatchEvent`. If this does not work
 robustly, the whole value proposition is dead.
 
-Status: **partially closed**. `lib/adapters/dom.ts` uses `document.execCommand('insertText',
+Status: **partially closed**. `lib/content/adapters/dom.ts` uses `document.execCommand('insertText',
 ...)` after selecting the element's contents — this goes through the browser's native text
 insertion path, which ProseMirror-based editors (what both ChatGPT and Claude.ai use) do
 observe correctly, unlike a synthetic `dispatchEvent` which they can silently ignore/revert.
@@ -54,8 +69,12 @@ corrupt the editor's state on either site — that's the real bar for "closed."
    (done) and Claude.ai (selector needs live verification — see above).
 2. Bubble + panel UI in Shadow DOM, hardcoded enhancement params. **Done** — Svelte
    `Widget.svelte`/`Panel.svelte`, params in `lib/enhance.ts`. Enhance button is a stub.
-3. Provider Abstraction Layer interface + BYOK provider (Anthropic or OpenAI direct). **Next.**
-4. End-to-end test of the full flow on 1 site with BYOK.
+3. Provider Abstraction Layer interface + BYOK provider (Anthropic or OpenAI direct). **Done**
+   — `lib/background/providers/{types,anthropic,index}.ts`, background message handler, popup API-key
+   settings page.
+4. End-to-end test of the full flow on 1 site with BYOK. **Next** — needs a human with a real
+   Anthropic API key to click through Enhance on chatgpt.com/claude.ai and confirm the
+   preview + "Use this" write-back both work.
 5. Add second and third site adapters.
 6. Self-hosted Ollama provider (test with a DeepSeek model).
 7. Hosted backend (Cloudflare Worker) as third provider, with auth (Clerk/Supabase).
