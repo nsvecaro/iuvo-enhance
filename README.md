@@ -2,7 +2,7 @@
 
 Browser extension (WXT + TypeScript) that adds a prompt-enhancer bubble to LLM chat sites. See `iuvo_architecture_v2.0.docx` for the full architecture/requirements doc.
 
-Current state: proof-of-concept only. `entrypoints/content.ts` injects a bubble on `chatgpt.com` and `claude.ai` next to the prompt input. Clicking it now actually **reads the draft and writes a test string back into the input** — this is the single riskiest mechanism in the whole project (see `CLAUDE.md`), so proving it works reliably is the current priority, before any panel/provider code gets built.
+Current state: bubble + panel UI, no provider yet. `entrypoints/content.ts` mounts a Svelte widget (`components/Widget.svelte`) on `chatgpt.com` and `claude.ai` next to the prompt input. Clicking the bubble opens a panel (`components/Panel.svelte`) showing the current draft and 5 hardcoded enhancement params (depth, simplification, tone, length, format). "Enhance" is currently a stub — it just logs to console, since there's no AI provider wired up yet (that's the next step, see `CLAUDE.md`).
 
 ## 1. Install
 
@@ -39,14 +39,16 @@ npm run dev:firefox
 
 ## 3. Test the current PoC
 
-This is the important test right now — it proves (or disproves) that we can write text back into ChatGPT's and Claude.ai's input reliably. Read `CLAUDE.md` → "The one risk that gates everything" for why this matters before doing anything else.
-
 1. With `npm run dev` running, open **https://chatgpt.com**, log in, land on a chat with the prompt box visible.
 2. Wait a second — a small purple ✨ circle button appears bottom-right of the page.
-3. Type something in the ChatGPT input first (e.g. "hello world"), then click the ✨ bubble.
-4. You should get an alert saying `setValue worked on chatgpt` — and the input itself should now show your original text plus a `[iuvo test ...]` marker appended.
-5. **The real test**: click into the input and keep typing normally. If the cursor behaves, text appears where expected, and nothing duplicates/glitches, the mechanism is solid. If typing breaks or the box looks corrupted, that's a real problem — screenshot it and flag it.
+3. Click it — a panel should open showing the current draft text and 5 dropdowns (depth, simplification, tone, length, format).
+4. Change a couple of dropdowns and click **Enhance**. Nothing visible happens in the UI (expected — no provider yet), but open DevTools Console (F12) and you should see `[iuvo:chatgpt] enhance requested { draftText, params }` logged.
+5. Click **Cancel** — the panel should close.
 6. Repeat steps 1-5 on **https://claude.ai**. This one is NOT verified yet — the adapter selector in `lib/adapters/claude.ts` is a best guess. If the bubble doesn't even appear on claude.ai, open DevTools → Elements, find the actual prompt `contenteditable` div, and update `CANDIDATE_SELECTORS` at the top of `lib/adapters/claude.ts` with the right selector (most specific one first).
+
+### Re-verifying the step-1 read/write mechanism
+
+Next to the open panel there's a small **"dev: test write"** button — this re-runs the original PoC test (the riskiest mechanism in the whole project, see `CLAUDE.md` → "The one risk that gates everything"). Type something in the real input first, click it, and you should get an alert saying `setValue worked on chatgpt` with a `[iuvo test ...]` marker appended to your text in the box. Then click into the input and keep typing — if it behaves normally (no glitches/duplication), the mechanism is solid. Use this any time you touch an adapter (e.g. after fixing the Claude.ai selector) to make sure it still works.
 
 Open DevTools Console (F12) while testing — every click logs `[iuvo:chatgpt] draft before:` / `draft after:` so you can see exactly what the adapter read and wrote.
 
@@ -70,16 +72,21 @@ npm run compile         # type-check only, no build
 
 ```
 entrypoints/
-  content.ts          # injected into matched pages (chatgpt.com, claude.ai) — bubble PoC
+  content.ts          # injected into matched pages (chatgpt.com, claude.ai)
+                       # finds the input, mounts Widget.svelte in a Shadow DOM
   background.ts       # background service worker
   popup/               # extension toolbar popup
-lib/adapters/
-  types.ts             # SiteAdapter interface (findInput/getValue/setValue)
-  dom.ts                # setContentEditableValue() — the execCommand write mechanism
-  chatgpt.ts            # ChatGPT adapter
-  claude.ts             # Claude.ai adapter (selector unverified, see CLAUDE.md)
-  index.ts               # adapter registry, picks adapter by hostname
+lib/
+  enhance.ts            # EnhanceParams type — the 5 hardcoded FR4 params
+  adapters/
+    types.ts              # SiteAdapter interface (findInput/getValue/setValue)
+    dom.ts                 # setContentEditableValue() — the execCommand write mechanism
+    chatgpt.ts             # ChatGPT adapter
+    claude.ts              # Claude.ai adapter (selector unverified, see CLAUDE.md)
+    index.ts                # adapter registry, picks adapter by hostname
 components/
+  Widget.svelte         # the bubble; toggles Panel open/closed; owns the dev test-write button
+  Panel.svelte          # draft preview + param dropdowns + Enhance (stub)/Cancel
   counter.ts
-wxt.config.ts          # WXT config
+wxt.config.ts          # WXT config (registers @wxt-dev/module-svelte)
 ```

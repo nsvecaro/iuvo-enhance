@@ -14,12 +14,20 @@ to learn prompt engineering. Full spec: `Iuvo_Architecture_v2_0.docx`.
 
 ## Current state (keep this section honest as we go)
 
-- Plain WXT + TypeScript starter. No Svelte, no providers, no panel yet.
+- WXT + TypeScript + Svelte (via `@wxt-dev/module-svelte`). No providers yet.
 - `entrypoints/content.ts` + `lib/adapters/{chatgpt,claude}.ts`: a small adapter pattern
   (`findInput`/`getValue`/`setValue` per site, see doc 6.3). Matches `chatgpt.com` and
-  `claude.ai`, polls for the input, injects a purple bubble into a Shadow DOM host. Click
-  reads the current draft, writes a marker string back via `execCommand('insertText', ...)`
-  (not a plain `dispatchEvent` — see below), then alerts whether it stuck.
+  `claude.ai`, polls for the input, mounts a Svelte UI (`components/Widget.svelte`) inside a
+  Shadow DOM via `createShadowRootUi`.
+- `Widget.svelte` renders the bubble; clicking it toggles `Panel.svelte` open/closed. The
+  panel shows the current draft (read via the adapter) and the 5 hardcoded FR4 params
+  (depth, simplification, tone, target length, output format — see `lib/enhance.ts`). Its
+  "Enhance" button is a stub — logs `{draftText, params}` to console, no provider exists yet
+  (that's step 3, do not build ahead of it).
+- The step-1 read/write proof is still reachable via a small "dev: test write" button that
+  appears next to the open panel, so it can be re-verified any time without digging through
+  git history. It writes a marker string back via `execCommand('insertText', ...)` (not a
+  plain `dispatchEvent` — see below) and alerts whether it stuck.
 - **The Claude.ai selector in `lib/adapters/claude.ts` is unverified against the live site**
   — it has fallbacks but needs a human to confirm/correct it in devtools.
 - The architecture doc describes the TARGET state, not what is built. Do not assume
@@ -44,9 +52,9 @@ corrupt the editor's state on either site — that's the real bar for "closed."
 1. Injection PoC: WXT scaffold, adapters with `findInput`/`getValue`/`setValue`. Confirm
    `execCommand('insertText', ...)` reliably updates the site's internal state on ChatGPT
    (done) and Claude.ai (selector needs live verification — see above).
-2. Only if step 1 is confirmed on both sites: bubble + panel UI in Shadow DOM (can move to
-   Svelte here), hardcoded enhancement params.
-3. Provider Abstraction Layer interface + BYOK provider (Anthropic or OpenAI direct).
+2. Bubble + panel UI in Shadow DOM, hardcoded enhancement params. **Done** — Svelte
+   `Widget.svelte`/`Panel.svelte`, params in `lib/enhance.ts`. Enhance button is a stub.
+3. Provider Abstraction Layer interface + BYOK provider (Anthropic or OpenAI direct). **Next.**
 4. End-to-end test of the full flow on 1 site with BYOK.
 5. Add second and third site adapters.
 6. Self-hosted Ollama provider (test with a DeepSeek model).
@@ -60,7 +68,7 @@ increasing simplicity (hosted backend is the eventual default so a new user need
 
 - Scaffold: WXT (cross-browser Chrome/Edge/Firefox from MVP, smaller bundle than Plasmo).
 - UI: Svelte + TypeScript, rendered inside a Shadow DOM root (smallest runtime for an
-  injected content-script UI). Not set up yet.
+  injected content-script UI). Set up via `@wxt-dev/module-svelte`.
 - Styling: Tailwind scoped inside the Shadow root, or plain CSS.
 - Background worker: plain TS `fetch`. MV3 workers are short-lived, so keep logic stateless
   and put state in storage.
