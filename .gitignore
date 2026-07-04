@@ -24,3 +24,7 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+
+#Personal document section local
+docs/Iuvo_Architecture_v2_0.md
+
