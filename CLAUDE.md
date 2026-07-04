@@ -14,24 +14,38 @@ to learn prompt engineering. Full spec: `Iuvo_Architecture_v2_0.docx`.
 
 ## Current state (keep this section honest as we go)
 
-- Plain WXT + TypeScript starter. No Svelte, no adapters, no providers, no panel yet.
-- `entrypoints/content.ts` is a proof-of-concept: matches `chatgpt.com`, polls for
-  `#prompt-textarea`, injects a purple bubble into a Shadow DOM host, click shows an alert.
+- Plain WXT + TypeScript starter. No Svelte, no providers, no panel yet.
+- `entrypoints/content.ts` + `lib/adapters/{chatgpt,claude}.ts`: a small adapter pattern
+  (`findInput`/`getValue`/`setValue` per site, see doc 6.3). Matches `chatgpt.com` and
+  `claude.ai`, polls for the input, injects a purple bubble into a Shadow DOM host. Click
+  reads the current draft, writes a marker string back via `execCommand('insertText', ...)`
+  (not a plain `dispatchEvent` — see below), then alerts whether it stuck.
+- **The Claude.ai selector in `lib/adapters/claude.ts` is unverified against the live site**
+  — it has fallbacks but needs a human to confirm/correct it in devtools.
 - The architecture doc describes the TARGET state, not what is built. Do not assume
   anything in the doc exists in code yet.
 
 ## The one risk that gates everything (doc 1.2)
 
-Reliably writing text back into `contenteditable` inputs whose React/Vue internal state
-does NOT update from a plain `dispatchEvent`. If this does not work robustly, the whole
-value proposition is dead. So: prove the read/write mechanism on ChatGPT AND Claude.ai
-before building any UI, provider, or preset code. Everything else is worthless without it.
+Reliably writing text back into `contenteditable` inputs whose React/Vue/ProseMirror
+internal state does NOT update from a plain `dispatchEvent`. If this does not work
+robustly, the whole value proposition is dead.
+
+Status: **partially closed**. `lib/adapters/dom.ts` uses `document.execCommand('insertText',
+...)` after selecting the element's contents — this goes through the browser's native text
+insertion path, which ProseMirror-based editors (what both ChatGPT and Claude.ai use) do
+observe correctly, unlike a synthetic `dispatchEvent` which they can silently ignore/revert.
+This works reliably on ChatGPT as implemented. **Still needs a human to test on claude.ai**
+(selector unverified) and to confirm typing normally after a programmatic write doesn't
+corrupt the editor's state on either site — that's the real bar for "closed."
 
 ## Build order (doc section 11) — do not skip ahead
 
-1. Injection PoC: WXT + Svelte scaffold, ONE adapter, only findInput/getValue/setValue.
-   Confirm event dispatch reliably updates the site's internal state.
-2. Only if step 1 works: bubble + panel UI in Shadow DOM, hardcoded enhancement params.
+1. Injection PoC: WXT scaffold, adapters with `findInput`/`getValue`/`setValue`. Confirm
+   `execCommand('insertText', ...)` reliably updates the site's internal state on ChatGPT
+   (done) and Claude.ai (selector needs live verification — see above).
+2. Only if step 1 is confirmed on both sites: bubble + panel UI in Shadow DOM (can move to
+   Svelte here), hardcoded enhancement params.
 3. Provider Abstraction Layer interface + BYOK provider (Anthropic or OpenAI direct).
 4. End-to-end test of the full flow on 1 site with BYOK.
 5. Add second and third site adapters.
