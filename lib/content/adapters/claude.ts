@@ -1,11 +1,9 @@
 import type { SiteAdapter } from './types';
 import { setContentEditableValue } from './dom';
 
-// Unverified against the live site — this is the part of the PoC that needs
-// a human to confirm in devtools. Claude.ai's composer is a ProseMirror
-// contenteditable div; these are the selectors known to have been used.
-// If none match, open devtools on claude.ai, inspect the prompt box, and
-// update this list (most specific first).
+// Verified working on live claude.ai (ProseMirror contenteditable).
+// First matching selector below confirmed; execCommand insertText lands the
+// text in ProseMirror's model and the message submits intact (round-trip tested).
 const CANDIDATE_SELECTORS = [
   'div[contenteditable="true"].ProseMirror',
   'div[aria-label="Write your prompt to Claude"]',
