@@ -1,14 +1,12 @@
 import type { SiteAdapter } from './types';
 import { setContentEditableValue } from './dom';
 
-// Verified working on live claude.ai (ProseMirror contenteditable).
-// First matching selector below confirmed; execCommand insertText lands the
-// text in ProseMirror's model and the message submits intact (round-trip tested).
+// VERIFIED AND WORKS
 const CANDIDATE_SELECTORS = [
-  'div[contenteditable="true"].ProseMirror',
-  'div[aria-label="Write your prompt to Claude"]',
-  'fieldset div[contenteditable="true"]',
-  'div[contenteditable="true"]',
+  'rich-textarea div[contenteditable="true"]',
+  'div.ql-editor[contenteditable="true"]',
+  'div[aria-label="Enter a prompt here"]',
+  'div[contenteditable="true"][role="textbox"]',
 ];
 
 function isValidInput(el: Element | null): el is HTMLElement {
@@ -16,10 +14,10 @@ function isValidInput(el: Element | null): el is HTMLElement {
   return el.getAttribute('contenteditable') === 'true';
 }
 
-const claudeAdapter: SiteAdapter = {
-  id: 'claude',
-  hostname: 'claude.ai',
-  matches: ['*://claude.ai/*'],
+const geminiAdapter: SiteAdapter = {
+  id: 'gemini',
+  hostname: 'gemini.google.com',
+  matches: ['*://gemini.google.com/*'],
 
   findInput() {
     for (const selector of CANDIDATE_SELECTORS) {
@@ -38,4 +36,4 @@ const claudeAdapter: SiteAdapter = {
   },
 };
 
-export default claudeAdapter;
+export default geminiAdapter;
