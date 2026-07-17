@@ -21,6 +21,7 @@ const chatgptAdapter: SiteAdapter = {
   id: 'chatgpt',
   hostname: 'chatgpt.com',
   matches: ['*://chatgpt.com/*'],
+  bubbleOffset: { x: 0, y: 0 },
 
   findInput() {
     for (const selector of CANDIDATE_SELECTORS) {
