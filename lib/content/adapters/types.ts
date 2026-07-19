@@ -11,11 +11,6 @@ export interface SiteAdapter {
   getValue(el: HTMLElement): string;
   /** Write text back into the input so the site's own framework picks it up. */
   setValue(el: HTMLElement, text: string): void;
-  /**
-   * Per-site tweak added to the bubble's computed anchor position, in px
-   * (x = horizontal, y = vertical, either may be negative). Each site pads
-   * its visual composer box around the contenteditable differently, so one
-   * universal offset doesn't sit right anywhere. Missing means { x: 0, y: 0 }.
-   */
+  /** Per-site px adjustment to the bubble's anchor position. Missing means { x: 0, y: 0 }. */
   bubbleOffset?: { x: number; y: number };
 }

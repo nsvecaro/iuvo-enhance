@@ -1,10 +1,7 @@
 import type { SiteAdapter } from './types';
 import { setContentEditableValue } from './dom';
 
-// ChatGPT's composer has moved selectors before and will again (T-03 in the
-// architecture doc) — try the known-stable one first, then a couple of
-// fallbacks scoped to the composer form so we don't grab an unrelated
-// contenteditable on the page.
+// Composer selectors have moved before and will again (T-03); ordered most-stable first.
 const CANDIDATE_SELECTORS = [
   '#prompt-textarea',
   'form [contenteditable="true"]',

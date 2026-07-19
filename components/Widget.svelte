@@ -12,43 +12,33 @@
 
   let { adapter, input: initialInput }: Props = $props();
 
-  // The prop is only the input found at mount time. Sites like claude.ai
-  // REPLACE the input element on resize/relayout, so we must never hold onto
-  // it — currentInput is re-resolved via adapter.findInput() whenever the DOM
-  // says our element is gone.
+  // Re-resolved via adapter.findInput() when the site replaces the DOM node (e.g. claude.ai on relayout).
   let currentInput: HTMLElement | null = initialInput;
 
   let panelOpen = $state(false);
   let draftText = $state('');
   let hasApiKey = $state(false);
   let inputVisible = $state(true);
-  // Grammarly-style: the bubble only appears once the draft has text, and hides
-  // again when the input is emptied. All three sites read via adapter.getValue
-  // (el.innerText), so one trim-based check works uniformly.
+  // Bubble only shows once the draft has text (Grammarly-style).
   let hasText = $state(false);
+  // No single caret line to anchor to during a non-collapsed selection.
+  let hasSelection = $state(false);
 
-  // Horizontally the bubble hugs the input's right edge; vertically it follows
-  // the line the caret is on (see updatePosition). Viewport-relative
-  // (getBoundingClientRect + position: fixed).
   const BUBBLE_SIZE = 28;
-  // Small inset from the right edge; per-adapter bubbleOffset fine-tunes per site.
+  // Inset from the caret / input edges; bubbleOffset fine-tunes per site.
   const ANCHOR_GAP = 8;
-  // How many px above the caret line's top edge the bubble sits.
-  const CARET_RAISE = 6;
+  const CARET_RAISE = 36;
 
   let bubbleTop = $state(0);
   let bubbleLeft = $state(0);
 
-  // Vertical position of the caret's line, stored as an offset from the input's
-  // top edge (not an absolute viewport y) so scroll/resize reposition it for
-  // free via rect.top, and it survives the caret moving out of our input (focus
-  // elsewhere) — we just keep the last known line. null = never measured yet.
+  // Offset from the input's top/left edges, not viewport coords, so scroll/resize reposition for free,
+  // and the last known spot survives the caret leaving the input.
   let lastCaretOffset: number | null = null;
+  let lastCaretLeftOffset: number | null = null;
 
-  // Measure the client rect of the current caret line without mutating the
-  // editor where possible. Returns null if it can't be measured.
+  // Caret rect without mutating the editor, where possible.
   function measureCaretRect(range: Range): DOMRect | null {
-    // Collapsed caret usually still yields a rect here; prefer one with height.
     const rects = range.getClientRects();
     for (const r of rects) {
       if (r.height > 0) return r;
@@ -57,19 +47,16 @@
     const bounding = range.getBoundingClientRect();
     if (bounding.height > 0) return bounding;
 
-    // Empty line / caret at line end can yield zero rects. Fall back to the
-    // element the caret sits in (e.g. the empty <p>), which carries the line's
-    // box — no DOM mutation, so no risk to the editor's model.
+    // Empty-line carets often yield no rect; fall back to the containing block, collapsed to its
+    // left edge since the block itself spans the full composer width.
     const node = range.startContainer;
     const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
     if (el) {
       const r = el.getBoundingClientRect();
-      if (r.height > 0) return r;
+      if (r.height > 0) return DOMRect.fromRect({ x: r.left, y: r.top, width: 0, height: r.height });
     }
 
-    // Last resort (rarely reached given the fallback above): briefly insert a
-    // zero-width marker at the caret, measure it, and remove it synchronously so
-    // the net DOM change is nil. Guarded so it can never break the page.
+    // Last resort: insert, measure, and remove a zero-width marker synchronously.
     try {
       const marker = document.createElement('span');
       marker.textContent = '​';
@@ -85,48 +72,62 @@
     return null;
   }
 
-  // Viewport-space top of the line the caret is on, or null if the caret isn't
-  // inside our input or can't be measured.
-  function getCaretLineTop(): number | null {
+  function getCaretRect(): DOMRect | null {
     if (!currentInput) return null;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return null;
     const range = selection.getRangeAt(0);
     if (!currentInput.contains(range.startContainer)) return null;
-    const rect = measureCaretRect(range);
-    return rect ? rect.top : null;
+    return measureCaretRect(range);
+  }
+
+  function updateSelectionState() {
+    const selection = window.getSelection();
+    hasSelection =
+      !!selection &&
+      !selection.isCollapsed &&
+      selection.rangeCount > 0 &&
+      !!currentInput &&
+      currentInput.contains(selection.getRangeAt(0).commonAncestorContainer);
+    if (hasSelection) panelOpen = false;
   }
 
   function updatePosition() {
     if (!currentInput) return;
     const rect = currentInput.getBoundingClientRect();
-    // Horizontal: fixed to the input's right edge, never follows the caret.
-    bubbleLeft = rect.right - BUBBLE_SIZE - ANCHOR_GAP + (adapter.bubbleOffset?.x ?? 0);
+    const caretRect = getCaretRect();
+    if (caretRect) {
+      lastCaretOffset = caretRect.top - rect.top;
+      lastCaretLeftOffset = caretRect.right - rect.left;
+    }
 
-    // Vertical: track the caret line. Store as an offset from the input top so
-    // scroll/resize reposition correctly and a lost caret keeps its last line.
-    const caretTop = getCaretLineTop();
-    if (caretTop !== null) lastCaretOffset = caretTop - rect.top;
     const lineOffset = lastCaretOffset ?? ANCHOR_GAP;
     bubbleTop = rect.top + lineOffset - CARET_RAISE + (adapter.bubbleOffset?.y ?? 0);
+
+    // Centered above the caret, clamped to the input's box; falls back to the right edge before
+    // the caret's ever been measured (e.g. not focused yet).
+    const caretLeft = lastCaretLeftOffset !== null ? rect.left + lastCaretLeftOffset : null;
+    const minLeft = rect.left + ANCHOR_GAP;
+    const maxLeft = rect.right - BUBBLE_SIZE - ANCHOR_GAP;
+    const target = caretLeft !== null ? caretLeft - BUBBLE_SIZE / 2 : maxLeft;
+    bubbleLeft = Math.min(Math.max(target, minLeft), Math.max(maxLeft, minLeft)) + (adapter.bubbleOffset?.x ?? 0);
   }
 
-  // Reflects whether the current input holds any non-whitespace text; drives
-  // whether the bubble is shown. Clearing the input also closes the panel,
-  // mirroring how losing the input entirely does (see MutationObserver below).
+  // ProseMirror/Quill leave a zero-width space on "empty" lines that .trim() alone won't catch.
+  const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/g;
+  function isBlank(text: string): boolean {
+    return text.replace(ZERO_WIDTH_RE, '').trim() === '';
+  }
+
   function updateHasText() {
-    hasText = !!currentInput && adapter.getValue(currentInput).trim() !== '';
+    hasText = !!currentInput && !isBlank(adapter.getValue(currentInput));
     if (!hasText) panelOpen = false;
   }
 
-  // Edit + caret listeners live on whichever element is currently the input.
-  // Sites replace the input on relayout, so we track the element we're bound to
-  // and move the listeners when it changes.
+  // Listeners move with the input element since sites replace it on relayout.
   let listenedInput: HTMLElement | null = null;
-  // Typing changes both the text (show/hide) and the caret line (vertical pos).
-  const onInput = () => { updateHasText(); updatePosition(); };
-  // Caret can move without editing (arrow keys, clicking into another line).
-  const onCaretMove = () => updatePosition();
+  const onInput = () => { updateHasText(); updatePosition(); updateSelectionState(); };
+  const onCaretMove = () => { updatePosition(); updateSelectionState(); };
 
   function attachInputListener(el: HTMLElement | null) {
     if (listenedInput === el) return;
@@ -143,24 +144,29 @@
     }
   }
 
-  // Compute immediately so the bubble never flashes at (0, 0) on mount, and so a
-  // page that reloads with text already in the input shows the bubble at once.
+  // Compute immediately so the bubble doesn't flash at (0, 0) or miss text already in the input on load.
   updatePosition();
   updateHasText();
+  updateSelectionState();
 
   $effect(() => {
-    // Watch the current input for edits so we can show/hide the bubble as the
-    // user types or clears the draft.
     attachInputListener(currentInput);
     updateHasText();
 
-    // Input growing/shrinking (multi-line drafts) moves its top edge.
     const resizeObserver = new ResizeObserver(() => updatePosition());
     if (currentInput) resizeObserver.observe(currentInput);
 
-    // Detects the input being replaced or removed. isConnected is cheap, so
-    // checking on every mutation batch is fine; findInput() only runs once
-    // our element is actually gone (or while we're waiting for a new one).
+    // Some editors don't guarantee their DOM is settled by the time 'input' fires, so watch the
+    // input's own mutations too (fixes the bubble not hiding right when the draft is cleared).
+    const contentObserver = new MutationObserver(() => {
+      updateHasText();
+      updatePosition();
+    });
+    if (currentInput) {
+      contentObserver.observe(currentInput, { childList: true, subtree: true, characterData: true });
+    }
+
+    // Re-finds the input if the site swaps or removes it.
     const mutationObserver = new MutationObserver(() => {
       if (currentInput?.isConnected) return;
 
@@ -168,14 +174,14 @@
       if (found === currentInput) return;
 
       resizeObserver.disconnect();
+      contentObserver.disconnect();
       currentInput = found;
       inputVisible = !!found;
-      // Move the 'input' listener onto the new element (removes it from the old
-      // one) and re-check emptiness against it. found === null sets hasText false.
       attachInputListener(found);
       updateHasText();
       if (found) {
         resizeObserver.observe(found);
+        contentObserver.observe(found, { childList: true, subtree: true, characterData: true });
         updatePosition();
       } else {
         panelOpen = false;
@@ -183,16 +189,13 @@
     });
     mutationObserver.observe(document.body, { childList: true, subtree: true });
 
-    // On window resize, measure after layout settles, not mid-relayout.
     let rafId = 0;
     const onWindowResize = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(updatePosition);
     };
 
-    // selectionchange only fires on document; use it to catch caret moves that
-    // don't fire keyup/click on the input, but only reposition when the caret is
-    // actually inside our input.
+    // selectionchange only fires on document, so filter to selections inside our input.
     const onSelectionChange = () => {
       const sel = window.getSelection();
       if (
@@ -202,6 +205,7 @@
       ) {
         updatePosition();
       }
+      updateSelectionState();
     };
     document.addEventListener('selectionchange', onSelectionChange);
 
@@ -211,6 +215,7 @@
     return () => {
       mutationObserver.disconnect();
       resizeObserver.disconnect();
+      contentObserver.disconnect();
       attachInputListener(null);
       document.removeEventListener('selectionchange', onSelectionChange);
       cancelAnimationFrame(rafId);
@@ -237,9 +242,7 @@
   }
 
   async function handleEnhance(params: EnhanceParams): Promise<string> {
-    // Re-read right before sending — the user may have kept typing while the
-    // panel was open, and T-02 requires sending exactly what's shown, not a
-    // stale snapshot from when the panel opened.
+    // Re-read here — the user may have kept typing while the panel was open (T-02).
     if (!currentInput) {
       throw new Error('The prompt input disappeared from the page.');
     }
@@ -262,8 +265,7 @@
     panelOpen = false;
   }
 
-  // Step 1's read/write proof, kept reachable for re-verifying on a site
-  // (e.g. after fixing a selector) without digging through git history.
+  // Kept for re-verifying setValue on a site after fixing a selector.
   function runWriteTest() {
     if (!currentInput) return;
     const testInput = currentInput;
@@ -284,7 +286,7 @@
   }
 </script>
 
-{#if inputVisible && hasText}
+{#if inputVisible && hasText && !hasSelection}
   <button
     class="bubble"
     style="top: {bubbleTop}px; left: {bubbleLeft}px;"
@@ -324,8 +326,7 @@
 
   .dev-test-btn {
     position: fixed;
-    /* Sits below the bubble, right-aligned to it (extends leftward, away from
-       the input); top/left come inline from the bubble anchor. */
+    /* Right-aligned to the bubble, extending leftward. */
     transform: translateX(-100%);
     background: #34343d;
     color: #b3b3bd;

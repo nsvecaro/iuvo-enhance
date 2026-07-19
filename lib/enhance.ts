@@ -1,6 +1,4 @@
-// FR4 (doc): minimum hardcoded enhancement parameters for the panel.
-// No provider exists yet (build order step 3), so nothing reads these
-// beyond logging them — see Widget.svelte's onEnhance stub.
+// FR4 (doc): hardcoded enhancement parameters for the panel.
 export interface EnhanceParams {
   depth: 'brief' | 'standard' | 'detailed';
   simplification: 'as-is' | 'simplify' | 'eli5';

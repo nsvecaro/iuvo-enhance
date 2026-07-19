@@ -1,9 +1,7 @@
 import type { SiteAdapter } from './types';
 import { setContentEditableValue } from './dom';
 
-// Verified working on live claude.ai (ProseMirror contenteditable).
-// First matching selector below confirmed; execCommand insertText lands the
-// text in ProseMirror's model and the message submits intact (round-trip tested).
+// Verified working on live claude.ai (ProseMirror contenteditable), round-trip tested.
 const CANDIDATE_SELECTORS = [
   'div[contenteditable="true"].ProseMirror',
   'div[aria-label="Write your prompt to Claude"]',
