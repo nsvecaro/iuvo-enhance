@@ -20,6 +20,7 @@ const claudeAdapter: SiteAdapter = {
   id: 'claude',
   hostname: 'claude.ai',
   matches: ['*://claude.ai/*'],
+  bubbleOffset: { x: 0, y: 0 },
 
   findInput() {
     for (const selector of CANDIDATE_SELECTORS) {

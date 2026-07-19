@@ -18,6 +18,7 @@ const geminiAdapter: SiteAdapter = {
   id: 'gemini',
   hostname: 'gemini.google.com',
   matches: ['*://gemini.google.com/*'],
+  bubbleOffset: { x: 0, y: 0 },
 
   findInput() {
     for (const selector of CANDIDATE_SELECTORS) {
