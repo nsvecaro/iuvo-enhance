@@ -11,30 +11,42 @@ export default defineContentScript({
 
     let mounted = false;
 
+    async function mountWidget(adapter: SiteAdapter, input: HTMLElement) {
+      if (mounted) return;
+      mounted = true;
+
+      const ui = await createShadowRootUi(ctx, {
+        name: 'iuvo-widget',
+        position: 'inline',
+        anchor: 'body',
+        append: 'last',
+        onMount(container) {
+          return mount(Widget, { target: container, props: { adapter, input } });
+        },
+        onRemove(app) {
+          if (app) unmount(app);
+        },
+      });
+
+      ui.mount();
+    }
+
     function waitForInput(adapter: SiteAdapter) {
-      const interval = setInterval(async () => {
+      const existing = adapter.findInput();
+      if (existing) {
+        mountWidget(adapter, existing);
+        return;
+      }
+
+      const observer = new MutationObserver(() => {
         const input = adapter.findInput();
         if (!input) return;
 
-        clearInterval(interval);
-        if (mounted) return;
-        mounted = true;
+        observer.disconnect();
+        mountWidget(adapter, input);
+      });
 
-        const ui = await createShadowRootUi(ctx, {
-          name: 'iuvo-widget',
-          position: 'inline',
-          anchor: 'body',
-          append: 'last',
-          onMount(container) {
-            return mount(Widget, { target: container, props: { adapter, input } });
-          },
-          onRemove(app) {
-            if (app) unmount(app);
-          },
-        });
-
-        ui.mount();
-      }, 500);
+      observer.observe(document.body, { childList: true, subtree: true });
     }
 
     waitForInput(adapter);
