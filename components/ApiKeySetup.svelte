@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { anthropicApiKey } from '@/lib/storage';
+  import { anthropicApiKey, activeProvider } from '@/lib/storage';
+  import type { ProviderId } from '@/lib/background/providers/types';
 
   interface Props {
     onSaved: () => void;
@@ -8,14 +9,21 @@
 
   let { onSaved, onClose }: Props = $props();
 
+  let provider = $state<ProviderId>('byok-anthropic');
   let key = $state('');
   let saving = $state(false);
 
+  // Ollama is local and unauthenticated, so it needs no key; only BYOK Anthropic does.
+  const needsKey = $derived(provider === 'byok-anthropic');
+  const canSave = $derived(!needsKey || key.trim().length > 0);
+
   async function handleSave() {
-    const trimmed = key.trim();
-    if (!trimmed) return;
+    if (!canSave) return;
     saving = true;
-    await anthropicApiKey.setValue(trimmed);
+    if (needsKey) {
+      await anthropicApiKey.setValue(key.trim());
+    }
+    await activeProvider.setValue(provider);
     saving = false;
     onSaved();
   }
@@ -27,26 +35,49 @@
     <button class="icon-btn" onclick={onClose} aria-label="Close">✕</button>
   </div>
 
-  <p class="hint">
-    Paste your Anthropic API key to enable Enhance. It's stored only in this browser's local
-    extension storage, never synced, and sent only to Anthropic's API. Get one at
-    <span class="mono">console.anthropic.com/settings/keys</span>.
-  </p>
-
-  <label class="field">
-    <span class="field-label">Anthropic API key</span>
-    <input
-      type="password"
-      placeholder="sk-ant-..."
-      autocomplete="off"
-      bind:value={key}
+  <div class="seg" role="group" aria-label="Provider">
+    <button
+      class="seg-btn"
+      class:active={provider === 'byok-anthropic'}
+      onclick={() => (provider = 'byok-anthropic')}
       disabled={saving}
-    />
-  </label>
+    >Anthropic (BYOK)</button>
+    <button
+      class="seg-btn"
+      class:active={provider === 'self-hosted-ollama'}
+      onclick={() => (provider = 'self-hosted-ollama')}
+      disabled={saving}
+    >Ollama (local)</button>
+  </div>
+
+  {#if needsKey}
+    <p class="hint">
+      Paste your Anthropic API key to enable Enhance. It's stored only in this browser's local
+      extension storage, never synced, and sent only to Anthropic's API. Get one at
+      <span class="mono">console.anthropic.com/settings/keys</span>.
+    </p>
+
+    <label class="field">
+      <span class="field-label">Anthropic API key</span>
+      <input
+        type="password"
+        placeholder="sk-ant-..."
+        autocomplete="off"
+        bind:value={key}
+        disabled={saving}
+      />
+    </label>
+  {:else}
+    <p class="hint">
+      Uses your local Ollama server — no API key needed and nothing leaves your machine. Make
+      sure it's running with <span class="mono">ollama serve</span> and the model is pulled
+      (e.g. <span class="mono">ollama pull llama3.2</span>).
+    </p>
+  {/if}
 
   <div class="actions">
     <button class="btn btn-secondary" onclick={onClose} disabled={saving}>Cancel</button>
-    <button class="btn btn-primary" onclick={handleSave} disabled={saving || !key.trim()}>
+    <button class="btn btn-primary" onclick={handleSave} disabled={saving || !canSave}>
       {saving ? 'Saving…' : 'Save & continue'}
     </button>
   </div>
@@ -95,6 +126,41 @@
 
   .icon-btn:hover {
     background: rgba(255, 255, 255, 0.1);
+  }
+
+  .seg {
+    display: flex;
+    gap: 4px;
+    background: #14141a;
+    border: 1px solid #34343d;
+    border-radius: 8px;
+    padding: 3px;
+  }
+
+  .seg-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    color: #b3b3bd;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .seg-btn:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .seg-btn.active {
+    background: #6c47ff;
+    color: white;
+  }
+
+  .seg-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
   }
 
   .hint {

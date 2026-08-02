@@ -3,7 +3,7 @@
   import ApiKeySetup from './ApiKeySetup.svelte';
   import type { SiteAdapter } from '@/lib/content/adapters';
   import type { EnhanceParams } from '@/lib/enhance';
-  import { anthropicApiKey } from '@/lib/storage';
+  import { anthropicApiKey, activeProvider } from '@/lib/storage';
 
   interface Props {
     adapter: SiteAdapter;
@@ -17,7 +17,8 @@
 
   let panelOpen = $state(false);
   let draftText = $state('');
-  let hasApiKey = $state(false);
+  // "Setup done" = the active provider is usable: Ollama needs nothing, Anthropic needs a key.
+  let providerReady = $state(false);
   let inputVisible = $state(true);
   // Bubble only shows once the draft has text (Grammarly-style).
   let hasText = $state(false);
@@ -228,13 +229,15 @@
     if (!panelOpen) {
       if (!currentInput) return;
       draftText = adapter.getValue(currentInput);
-      hasApiKey = !!(await anthropicApiKey.getValue());
+      const activeId = await activeProvider.getValue();
+      providerReady =
+        activeId === 'self-hosted-ollama' || !!(await anthropicApiKey.getValue());
     }
     panelOpen = !panelOpen;
   }
 
   function handleKeySaved() {
-    hasApiKey = true;
+    providerReady = true;
   }
 
   function close() {
@@ -294,7 +297,7 @@
     aria-label="Open Iuvo">✨</button>
 
   {#if panelOpen}
-    {#if !hasApiKey}
+    {#if !providerReady}
       <ApiKeySetup onSaved={handleKeySaved} onClose={close} />
     {:else}
       <Panel {draftText} onClose={close} onEnhance={handleEnhance} onAccept={handleAccept} />

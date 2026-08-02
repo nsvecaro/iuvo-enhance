@@ -1,4 +1,5 @@
-import { defaultProvider } from '@/lib/background/providers';
+import { getProvider } from '@/lib/background/providers';
+import { activeProvider } from '@/lib/storage';
 import type { EnhanceParams } from '@/lib/enhance';
 
 interface EnhanceMessage {
@@ -17,8 +18,9 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message): Promise<EnhanceResponse> | undefined => {
     if (!isEnhanceMessage(message)) return undefined;
 
-    return defaultProvider
-      .rewrite(message.draftText, message.params)
+    return activeProvider
+      .getValue()
+      .then((id) => getProvider(id).rewrite(message.draftText, message.params))
       .then((result): EnhanceResponse => ({ ok: true, result }))
       .catch((err): EnhanceResponse => ({
         ok: false,
