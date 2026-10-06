@@ -1,55 +1,54 @@
+import { mount, unmount } from 'svelte';
+import { adapters, getAdapterForHostname, type SiteAdapter } from '@/lib/content/adapters';
+import Widget from '@/components/Widget.svelte';
+
 export default defineContentScript({
-  matches: ['*://chatgpt.com/*'],
-  main() {
-    let bubble: HTMLElement | null = null;
+  matches: adapters.flatMap((a) => a.matches),
+  cssInjectionMode: 'ui',
+  async main(ctx) {
+    const adapter = getAdapterForHostname(location.hostname);
+    if (!adapter) return;
 
-    function createBubble() {
-      const host = document.createElement('div');
-      host.id = 'iuvo-host';
+    let mounted = false;
 
-      const shadow = host.attachShadow({ mode: 'open' });
+    async function mountWidget(adapter: SiteAdapter, input: HTMLElement) {
+      if (mounted) return;
+      mounted = true;
 
-      const btn = document.createElement('button');
-      btn.textContent = '✨';
-      btn.style.cssText = `
-        position: fixed;
-        bottom: 120px;
-        right: 32px;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #6c47ff;
-        color: white;
-        font-size: 18px;
-        border: none;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        z-index: 999999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      `;
-
-      btn.addEventListener('click', () => {
-        alert('Iuvo bubble clicked! Panel coming next.');
+      const ui = await createShadowRootUi(ctx, {
+        name: 'iuvo-widget',
+        position: 'inline',
+        anchor: 'body',
+        append: 'last',
+        onMount(container) {
+          return mount(Widget, { target: container, props: { adapter, input } });
+        },
+        onRemove(app) {
+          if (app) unmount(app);
+        },
       });
 
-      shadow.appendChild(btn);
-      document.body.appendChild(host);
-      bubble = host;
+      ui.mount();
     }
 
-    function waitForInput() {
-      const interval = setInterval(() => {
-        const input = document.querySelector('#prompt-textarea');
+    function waitForInput(adapter: SiteAdapter) {
+      const existing = adapter.findInput();
+      if (existing) {
+        mountWidget(adapter, existing);
+        return;
+      }
+
+      const observer = new MutationObserver(() => {
+        const input = adapter.findInput();
         if (!input) return;
 
-        clearInterval(interval);
+        observer.disconnect();
+        mountWidget(adapter, input);
+      });
 
-        if (!bubble) createBubble();
-      }, 500);
+      observer.observe(document.body, { childList: true, subtree: true });
     }
 
-    waitForInput();
+    waitForInput(adapter);
   },
 });

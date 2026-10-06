@@ -28,3 +28,9 @@ web-ext.config.ts
 #Personal document section local
 docs/Iuvo_Architecture_v2_0.md
 
+# Tool output (generated, not source)
+graphify-out/
+
+# Local architecture doc (kept out of the repo)
+Iuvo_Architecture_v2.0.docx
+

@@ -1,74 +1,91 @@
 # Iuvo
 
-Browser extension (WXT + TypeScript) that adds a prompt-enhancer bubble to LLM chat sites. See `iuvo_architecture_v2.0.docx` for the full architecture/requirements doc.
+Browser extension (WXT + TypeScript + Svelte) that adds a prompt-enhancer bubble to LLM
+chat sites. You write a rough prompt, click the bubble, and Iuvo rewrites it into a clearer,
+better-structured prompt before you send it — like Grammarly, but for prompts.
 
-Current state: proof-of-concept only. `entrypoints/content.ts` injects a bubble on `chatgpt.com` next to the prompt textarea. Clicking it just shows an alert for now — no panel, no providers yet.
+## Status
 
-## 1. Install
+Early development. The hard part is proven; the product around it is being built.
 
-Requirements: Node 20+ and npm (already have these? skip to the command).
+- Text injection works on ChatGPT and Claude.ai: read the draft, write an enhanced version
+  back into the composer, round-trip verified (the message sends intact).
+- Per-site adapter layer (ChatGPT, Claude.ai) behind a shared interface.
+- Provider layer scaffolded with BYOK (bring-your-own-key) for Anthropic; the API key is
+  stored locally only (`chrome.storage.local`), never synced.
+- (WIP) The enhancement UI panel is currently a shell: it reads the input, but the full
+  "click -> enhance -> write back" flow is not wired end to end yet.
+- (Planned) Gemini / Perplexity adapters, a self-hosted (Ollama) provider, and a hosted
+  backend provider.
 
-```bash
-git clone https://github.com/nsvecaro/iuvo-enhance.git
-cd iuvo-enhance
-npm install
-```
+A temporary `dev: test write` button is present to test the injection mechanism directly.
+It will be removed once the real panel is wired.
 
-`npm install` also runs `wxt prepare` automatically (via `postinstall`) — it generates the `.wxt/` folder needed for TypeScript to work. If your editor shows red squiggles everywhere after cloning, just run `npm install` again.
+## Why this is non-trivial
 
-## 2. Run it (dev mode)
+ChatGPT and Claude.ai use rich-text editors (Lexical / ProseMirror) that keep their own
+model of the text on top of the DOM. Setting `innerText` and dispatching a synthetic event
+does not reliably work: the editor resyncs from its own state and discards the change. Iuvo
+writes through the browser's native text-insertion path (`execCommand('insertText')`), which
+these editors observe, so the injected prompt lands in the editor's model and can be sent.
+See `lib/content/adapters/dom.ts`.
 
-```bash
-npm run dev
-```
+## Tech stack
 
-This starts WXT in watch mode and should auto-open a Chrome window with the extension already loaded. Leave this running in a terminal — it rebuilds and reloads automatically whenever you save a file.
+- WXT: cross-browser Manifest V3 framework (Chrome, Edge, Firefox from one codebase)
+- TypeScript
+- Svelte 5 for the injected UI, mounted inside a Shadow DOM so page styles don't leak in or out
+- Anthropic API (BYOK) as the first rewrite provider
 
-If it doesn't auto-open a browser, or you want to load it manually:
-
-1. Go to `chrome://extensions`
-2. Enable **Developer mode** (top right toggle)
-3. Click **Load unpacked**
-4. Select the `.output/chrome-mv3/` folder from this project
-
-For Firefox instead of Chrome:
-
-```bash
-npm run dev:firefox
-```
-
-## 3. Test the current PoC
-
-1. With `npm run dev` running, open **https://chatgpt.com** in the browser window WXT opened (or a browser you loaded the extension into).
-2. Log in / land on a chat with the prompt input visible.
-3. Wait a second — a small purple ✨ circle button should appear bottom-right of the page.
-4. Click it — you should get an `alert("Iuvo bubble clicked! Panel coming next.")`.
-
-If the bubble never shows up:
-- Make sure the URL is exactly `chatgpt.com` (not `chat.openai.com` — the adapter only matches `chatgpt.com` right now).
-- Check `chrome://extensions` → click **Errors** on the Iuvo card for stack traces.
-- Open DevTools on the page (F12) → Console, look for errors from the content script.
-- Try reloading the extension (the reload icon on the card in `chrome://extensions`) and refreshing the ChatGPT tab.
-
-That's it — there's no build step required to "test" it, `npm run dev` is the only command you need day to day.
-
-## Other commands (not needed for normal dev)
-
-```bash
-npm run build          # production build -> .output/
-npm run build:firefox  # production build for firefox
-npm run zip             # zip the extension for store upload
-npm run compile         # type-check only, no build
-```
-
-## Project layout
+## Project structure
 
 ```
 entrypoints/
-  content.ts        # injected into matched pages (currently just chatgpt.com) — bubble PoC
-  background.ts      # background service worker
-  popup/              # extension toolbar popup
-components/
-  counter.ts
-wxt.config.ts         # WXT config
+  content.ts             # injected into matched sites; picks the adapter, mounts the UI
+  background.ts          # background service worker (the only component that makes network calls)
+  popup/                 # toolbar popup
+components/              # Svelte UI (Widget, Panel, ApiKeySetup)
+lib/
+  content/adapters/      # per-site DOM layer: types, dom (injection), chatgpt, claude, index
+  background/providers/  # per-LLM layer: types, anthropic (BYOK), index
+  enhance.ts             # builds the rewrite request
+  storage.ts             # chrome.storage wrapper (API key, etc.)
 ```
+
+The two layers are independent by design: adapters know how to talk to a **site**, providers
+know how to talk to an **LLM**. Adding a site is a new adapter; changing how prompts are
+rewritten (BYOK -> self-hosted -> hosted) is a new provider. Neither change touches the other.
+
+## Run it (dev)
+
+```
+npm install
+npm run dev            # Chrome
+npm run dev:firefox    # Firefox
+```
+
+WXT opens a browser with the extension loaded and reloads on save.
+
+### Testing on Claude.ai
+
+The dev browser WXT launches uses a fresh profile, so Cloudflare's bot check on claude.ai can
+block login. To test there, load the built extension into your normal Chrome instead:
+`chrome://extensions` -> enable Developer mode -> Load unpacked -> select `.output/chrome-mv3/`.
+
+## Other commands
+
+```
+npm run build          # production build -> .output/
+npm run compile        # type-check only
+npm run zip            # package for store upload
+```
+
+## Roadmap
+
+1. Prove injection on ChatGPT + Claude.ai (done)
+2. Working enhancement panel (bubble -> panel -> enhance -> write back)
+3. Provider abstraction + BYOK end to end
+4. More site adapters (Gemini, Perplexity)
+5. Self-hosted (Ollama) provider
+6. Hosted backend provider + auth
+7. Security pass against the threat model before public beta
